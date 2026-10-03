@@ -95,17 +95,24 @@ class Filter:
 
     # ---------------- Blacklist ----------------
     def lade_blacklist(self) -> None:
-        eintraege = []
+        # Eintrag MIT Rechtsform ("SAP SE")  -> passt nur genau auf diese Firma
+        # Eintrag OHNE Rechtsform ("Siemens") -> passt auf alle Firmen mit diesem Wort
+        exakt, wort = set(), []
         if self.blacklist_datei.exists():
             for zeile in self.blacklist_datei.read_text(encoding="utf-8").splitlines():
                 zeile = zeile.strip()
-                if zeile and not zeile.startswith("#"):
-                    eintraege.append(firmen_schluessel(zeile))
-        self.blacklist = eintraege
-        self._bl = _ganzwort_regex(eintraege)
+                if not zeile or zeile.startswith("#"):
+                    continue
+                key = firmen_schluessel(zeile)
+                alle_worte = " ".join(re.sub(r"[^a-z0-9]+", " ", _basis(zeile).replace("&", " ")).split())
+                (exakt.add(key) if key != alle_worte else wort.append(key))
+        self.blacklist = sorted(exakt) + wort
+        self._bl_exakt = exakt
+        self._bl = _ganzwort_regex(wort)
 
     def ist_blacklist(self, arbeitgeber: str) -> bool:
-        return bool(self._bl and self._bl.search(firmen_schluessel(arbeitgeber)))
+        key = firmen_schluessel(arbeitgeber)
+        return key in self._bl_exakt or bool(self._bl and self._bl.search(key))
 
     # ---------------- Titel / Arbeitgeber ----------------
     def titel_ausgeschlossen(self, titel: str) -> bool:

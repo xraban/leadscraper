@@ -98,6 +98,8 @@ def test_filter_hilfen(umgebung):
     assert not flt.ist_personaldienstleister("Stadtverwaltung Weinheim")
     assert flt.ist_blacklist("SAP SE") and flt.ist_blacklist("Hays Professional Solutions GmbH")
     assert not flt.ist_blacklist("Sapient GmbH")
+    assert not flt.ist_blacklist("SAP Beratung Müller GmbH")   # "SAP SE" mit Rechtsform -> exakt
+    assert flt.ist_blacklist("BASF Digital Solutions GmbH")    # "BASF" ohne Rechtsform -> Wort
     assert flt.titel_ausgeschlossen("Praktikum im Bereich DevOps")
     assert not flt.titel_ausgeschlossen("Senior DevOps Engineer")
     assert titel_normal("SAP Berater FI/CO (m/w/d)") == titel_normal("SAP-Berater FI/CO (w/m/d)")
