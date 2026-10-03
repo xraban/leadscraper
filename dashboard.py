@@ -12,6 +12,7 @@ from stellenradar import arbeitsagentur, briefe, db, watchlist
 from stellenradar.config import CONFIG_DATEI, STATUS_WERTE, ConfigFehler, lade_config, pfad
 from stellenradar.export import excel_bytes
 from stellenradar.filter import Filter, blacklist_hinzufuegen
+from stellenradar.protokoll import logging_einrichten
 from stellenradar.scoring import firmen_uebersicht, jobs_laden
 
 st.set_page_config(page_title="Stellen-Radar", page_icon="📡", layout="wide")
@@ -24,6 +25,7 @@ except ConfigFehler as e:
     st.stop()
 
 FLT = Filter(CFG)
+logging_einrichten(CFG)   # Fortschritt im Konsolenfenster + Logdatei im Ordner logs
 CON = db.verbinden(pfad(CFG, CFG.get("datenbank", "daten/stellenradar.db")))
 
 
@@ -65,7 +67,12 @@ with st.sidebar:
                 werg = watchlist.alle_abrufen(CON, CFG, FLT, fortschritt=lambda p, t: balken.progress(p, text=t))
                 st.write(f"Karriereseiten: {werg.get('abgerufen', 0)} abgerufen, "
                          f"{werg.get('neu', 0)} neue IT-Stellen.")
-                status.update(label="Abruf fertig", state="complete")
+                if erg.get("gefunden", 0) == 0 or not erg.get("erfolgreich"):
+                    status.update(label="Abruf mit Problemen – Details hier", state="error", expanded=True)
+                    st.info("Bitte die Meldungen oben beachten. Die Dateien api_antwort_*.txt im Ordner "
+                            "„logs“ zeigen, was die Arbeitsagentur geantwortet hat.")
+                else:
+                    status.update(label="Abruf fertig", state="complete")
             except Exception as e:  # noqa: BLE001
                 status.update(label="Abruf fehlgeschlagen", state="error")
                 st.error(f"Fehler: {e}")

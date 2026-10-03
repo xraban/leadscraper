@@ -44,7 +44,7 @@ fachbereiche:
 arbeitsagentur:
   basis_url: https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/
   # Wird der erste Endpunkt abgelehnt, wird automatisch der nächste probiert
-  endpunkte: [pc/v4/app/jobs, pc/v6/jobs]
+  endpunkte: [pc/v4/jobs, pc/v4/app/jobs, pc/v6/jobs]
   api_key: jobboerse-jobsuche
   # Nur Anzeigen, die in den letzten X Tagen veröffentlicht wurden.
   # 0 = keine Einschränkung (empfohlen, damit lange offene Stellen sichtbar sind)

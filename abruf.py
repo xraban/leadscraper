@@ -8,29 +8,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import datetime
 
 from stellenradar import arbeitsagentur, watchlist
 from stellenradar.config import ConfigFehler, lade_config, pfad
 from stellenradar.db import verbinden
 from stellenradar.filter import Filter
-
-
-def logging_einrichten(cfg: dict) -> None:
-    ordner = pfad(cfg, "logs")
-    ordner.mkdir(parents=True, exist_ok=True)
-    datei = ordner / f"abruf_{datetime.now():%Y-%m}.log"
-    fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%Y-%m-%d %H:%M:%S")
-    log = logging.getLogger("stellenradar")
-    log.setLevel(logging.INFO)
-    log.handlers.clear()
-    fh = logging.FileHandler(datei, encoding="utf-8")
-    fh.setFormatter(fmt)
-    log.addHandler(fh)
-    if sys.stdout is not None:          # bei pythonw (Aufgabenplanung) gibt es keine Konsole
-        sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(fmt)
-        log.addHandler(sh)
+from stellenradar.protokoll import logging_einrichten
 
 
 def main(argv=None) -> int:

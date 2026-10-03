@@ -15,12 +15,14 @@ def umgebung(tmp_path):
     cfg = lade_config()
     cfg["arbeitsagentur"]["pause_sekunden"] = 0
     cfg["arbeitsagentur"]["seitengroesse"] = 2      # Blättern testen
+    cfg["_test_logs"] = tmp_path / "logs"
     con = verbinden(tmp_path / "test.db")
     return cfg, con, Filter(cfg)
 
 
 def lauf(cfg, con, flt, session):
-    client = arbeitsagentur.BAClient(cfg, session=session, schlafen=lambda s: None)
+    client = arbeitsagentur.BAClient(cfg, session=session, schlafen=lambda s: None,
+                                     protokoll_ordner=cfg.get("_test_logs"))
     return arbeitsagentur.abrufen(con, cfg, flt, client=client, erzwingen=True)
 
 
@@ -79,7 +81,7 @@ def test_endpunkt_wechsel(umgebung):
     s = FakeSession(v4_status=404)
     erg = lauf(cfg, con, flt, s)
     assert erg["erfolgreich"]
-    assert s.aufrufe[0][0].endswith("pc/v4/app/jobs") and s.aufrufe[-1][0].endswith("pc/v6/jobs")
+    assert s.aufrufe[0][0].endswith("pc/v4/jobs") and s.aufrufe[-1][0].endswith("pc/v6/jobs")
     p = s.aufrufe[-1][1]
     assert p["angebotsart"] == 1 and p["zeitarbeit"] == "false" and p["pav"] == "false"
 
@@ -122,5 +124,49 @@ def test_keine_verbindung_bricht_ab(umgebung):
             raise requests.ConnectionError("keine Verbindung")
 
     erg = lauf(cfg, con, flt, Kaputt())
-    assert not erg["erfolgreich"] and "nicht erreichbar" in erg["meldungen"][0]
+    assert not erg["erfolgreich"] and "keine Anzeigen geliefert" in erg["meldungen"][0]
     assert Kaputt.n == cfg["arbeitsagentur"]["wiederholungen"]   # nur die erste Suche probiert
+
+
+def test_403_andere_kennung_und_unbekanntes_format(umgebung):
+    """v4 lehnt die Programmkennung ab, v4/app liefert fremdes Format -> v6 wird genutzt."""
+    from fake_ba import FakeResponse
+
+    cfg, con, flt = umgebung
+    cfg["arbeitsagentur"]["endpunkte"] = ["pc/v4/jobs", "pc/v4/app/jobs", "pc/v6/jobs"]
+    s = FakeSession()
+    original = s.get
+
+    def get(url, params=None, timeout=None):
+        if url.endswith("pc/v4/jobs"):
+            s.aufrufe.append((url, dict(params)))
+            if "Stellen-Radar" in s.headers.get("User-Agent", "") or "python" in s.headers.get("User-Agent", ""):
+                return FakeResponse(403)
+            return FakeResponse(200, {"etwas": "anderes"})
+        if url.endswith("pc/v4/app/jobs"):
+            s.aufrufe.append((url, dict(params)))
+            return FakeResponse(200, {"meldung": "unbekannt"})
+        return original(url, params, timeout)
+
+    s.get = get
+    erg = lauf(cfg, con, flt, s)
+    assert erg["erfolgreich"] and erg["gefunden"] == 13
+    assert s.aufrufe[-1][0].endswith("pc/v6/jobs")
+    assert (cfg["_test_logs"] / "api_antwort_pc_v4_app_jobs.txt").exists()
+
+
+def test_antwortformate():
+    lesen = arbeitsagentur.antwort_lesen
+    assert lesen({"maxErgebnisse": "0"}) == ([], 0)
+    items, n = lesen({"ergebnis": {"liste": [{"refNr": "1", "titel": "A"}]}, "totalElements": 7})
+    assert items == [{"refNr": "1", "titel": "A"}] and n == 7
+    assert lesen({"fehler": "x"}) == (None, None)
+    job = arbeitsagentur.anzeige_umwandeln({"refNr": "R1", "stellentitel": "Dev", "arbeitgeber": {"name": "X GmbH"},
+                                            "arbeitsorte": [{"ort": "Weinheim", "plz": "69469"}]})
+    assert job["arbeitgeber"] == "X GmbH" and job["ort"] == "Weinheim" and job["titel"] == "Dev"
+
+
+def test_null_treffer_meldung(umgebung):
+    cfg, con, flt = umgebung
+    erg = lauf(cfg, con, flt, FakeSession(stellen=[]))
+    assert "für keinen Suchbegriff Anzeigen" in erg["meldungen"][0]

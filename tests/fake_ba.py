@@ -57,7 +57,7 @@ class FakeSession:
     def get(self, url, params=None, timeout=None):
         self.aufrufe.append((url, dict(params)))
         assert self.headers.get("X-API-Key") == "jobboerse-jobsuche"
-        if url.endswith("pc/v4/app/jobs") and self.v4_status != 200:
+        if "/pc/v4/" in url and self.v4_status != 200:
             return FakeResponse(self.v4_status)
         if params["was"] in self.fehler_bei:
             return FakeResponse(500)

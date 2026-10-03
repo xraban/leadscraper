@@ -5,12 +5,13 @@ import json
 import logging
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Callable
 
 import requests
 
 from . import db
-from .config import alle_suchbegriffe
+from .config import alle_suchbegriffe, pfad
 from .filter import Filter
 from .speicher import erneut_ausgeschrieben_pruefen, job_speichern
 
@@ -20,31 +21,108 @@ QUELLE = "Arbeitsagentur"
 DETAIL_URL = "https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}"
 
 
+STANDARD_ENDPUNKTE = ["pc/v4/jobs", "pc/v4/app/jobs", "pc/v6/jobs"]
+# Manche Server lehnen unbekannte Programme ab (HTTP 403) – dann wird mit anderer Kennung erneut gefragt
+USER_AGENTS = [
+    "Stellen-Radar/1.0",
+    None,   # Standard-Kennung von Python-requests
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0 Safari/537.36",
+]
+_LISTEN_SCHLUESSEL = ("stellenangebote", "stellenangebot", "jobs", "ergebnisse", "results", "content", "items")
+_ANZAHL_SCHLUESSEL = ("maxErgebnisse", "totalElements", "total", "anzahl", "gesamt", "anzahlErgebnisse")
+
+
+def _finde_liste(o, tiefe=0):
+    """Sucht rekursiv eine Liste, deren Einträge wie Stellenanzeigen aussehen."""
+    if tiefe > 4:
+        return None
+    if isinstance(o, list) and o and all(isinstance(x, dict) for x in o[:3]):
+        if any(k in o[0] for k in ("refnr", "refNr", "referenznummer", "titel", "stellentitel")):
+            return o
+    werte = o.values() if isinstance(o, dict) else (o if isinstance(o, list) else [])
+    for v in werte:
+        if isinstance(v, (dict, list)):
+            gefunden = _finde_liste(v, tiefe + 1)
+            if gefunden is not None:
+                return gefunden
+    return None
+
+
+def antwort_lesen(daten) -> tuple[list | None, int | None]:
+    """Liefert (Anzeigenliste, Gesamtzahl). Liste ist None, wenn das Format unbekannt ist."""
+    if not isinstance(daten, (dict, list)):
+        return None, None
+    items = None
+    gesamt = None
+    if isinstance(daten, dict):
+        for k in _LISTEN_SCHLUESSEL:
+            if isinstance(daten.get(k), list):
+                items = daten[k]
+                break
+        for k in _ANZAHL_SCHLUESSEL:
+            if daten.get(k) not in (None, ""):
+                try:
+                    gesamt = int(daten[k])
+                    break
+                except (TypeError, ValueError):
+                    pass
+        if gesamt is None and isinstance(daten.get("page"), dict):      # z. B. {"page": {"totalElements": ..}}
+            for k in _ANZAHL_SCHLUESSEL:
+                if k in daten["page"]:
+                    try:
+                        gesamt = int(daten["page"][k])
+                        break
+                    except (TypeError, ValueError):
+                        pass
+    if items is None:
+        items = _finde_liste(daten)
+    if items is None and gesamt is not None:
+        items = []          # gültige Antwort ohne Treffer
+    return items, gesamt
+
+
 class ApiFehler(Exception):
     pass
 
 
 class BAClient:
-    def __init__(self, cfg: dict, session: requests.Session | None = None, schlafen=time.sleep):
+    def __init__(self, cfg: dict, session: requests.Session | None = None, schlafen=time.sleep,
+                 protokoll_ordner: Path | None = None):
         a = cfg.get("arbeitsagentur") or {}
         self.basis = a.get("basis_url", "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/")
         if not self.basis.endswith("/"):
             self.basis += "/"
-        self.endpunkte = list(a.get("endpunkte") or ["pc/v4/app/jobs", "pc/v6/jobs"])
+        self.endpunkte = list(dict.fromkeys(list(a.get("endpunkte") or []) + STANDARD_ENDPUNKTE))
         self.aktiver = 0
+        self.ua_index = 0
         self.pause = float(a.get("pause_sekunden", 1.5))
         self.timeout = float(a.get("timeout_sekunden", 30))
         self.versuche = max(1, int(a.get("wiederholungen", 3)))
         self.session = session or requests.Session()
         self.session.headers.update({
             "X-API-Key": a.get("api_key", "jobboerse-jobsuche"),
-            "User-Agent": "Stellen-Radar/1.0",
             "Accept": "application/json",
         })
+        self._ua_setzen()
         self.schlafen = schlafen
+        self.protokoll_ordner = protokoll_ordner
         self.anfragen = 0
         self._letzte = 0.0
-        self._endpunkt_bestaetigt = False   # hat der aktuelle Endpunkt schon geantwortet?
+        self._endpunkt_bestaetigt = False   # hat der aktuelle Endpunkt schon gültig geantwortet?
+        self.versuchsprotokoll: list[str] = []
+
+    def _ua_setzen(self):
+        ua = USER_AGENTS[self.ua_index]
+        if ua:
+            self.session.headers["User-Agent"] = ua
+        else:
+            self.session.headers.pop("User-Agent", None)
+            self.session.headers["User-Agent"] = requests.utils.default_user_agent()
+
+    @property
+    def endpunkt(self) -> str:
+        return self.endpunkte[min(self.aktiver, len(self.endpunkte) - 1)]
 
     def _warten(self):
         rest = self.pause - (time.monotonic() - self._letzte)
@@ -52,10 +130,32 @@ class BAClient:
             self.schlafen(rest)
         self._letzte = time.monotonic()
 
+    def _beispiel_speichern(self, endpunkt: str, r, daten=None):
+        """Speichert die erste Antwort je Endpunkt – hilft bei der Fehlersuche."""
+        if not self.protokoll_ordner:
+            return
+        try:
+            self.protokoll_ordner.mkdir(parents=True, exist_ok=True)
+            datei = self.protokoll_ordner / f"api_antwort_{endpunkt.replace('/', '_')}.txt"
+            if daten is not None:
+                kopie = json.loads(json.dumps(daten))
+                if isinstance(kopie, dict):
+                    for k, v in kopie.items():
+                        if isinstance(v, list):
+                            kopie[k] = v[:3]
+                text = json.dumps(kopie, ensure_ascii=False, indent=2)
+            else:
+                text = r.text[:5000]
+            datei.write_text(f"// HTTP {r.status_code} {getattr(r, 'url', '')}\n{text}", encoding="utf-8")
+        except Exception:  # noqa: BLE001 – nur Diagnose
+            pass
+
     def suche(self, params: dict) -> dict:
+        """Gibt {"items": [...], "gesamt": n|None, "roh": ...} zurück."""
         letzter_fehler = None
         while self.aktiver < len(self.endpunkte):
             url = self.basis + self.endpunkte[self.aktiver]
+            naechster = False
             for versuch in range(self.versuche):
                 self._warten()
                 self.anfragen += 1
@@ -69,11 +169,24 @@ class BAClient:
                 if r.status_code == 200:
                     try:
                         daten = r.json()
-                        self._endpunkt_bestaetigt = True
-                        return daten
                     except ValueError:
                         letzter_fehler = "Antwort ist kein JSON"
-                        break   # -> nächsten Endpunkt probieren
+                        self._beispiel_speichern(self.endpunkte[self.aktiver], r)
+                        naechster = True
+                        break
+                    items, gesamt = antwort_lesen(daten)
+                    if not self._endpunkt_bestaetigt:
+                        self._beispiel_speichern(self.endpunkte[self.aktiver], r, daten)
+                    if items is None:
+                        schluessel = list(daten.keys())[:10] if isinstance(daten, dict) else type(daten).__name__
+                        letzter_fehler = f"unbekanntes Antwortformat (Felder: {schluessel})"
+                        naechster = True
+                        break
+                    if not self._endpunkt_bestaetigt:
+                        log.info("  Verwende Endpunkt %s", self.endpunkte[self.aktiver])
+                        self.versuchsprotokoll.append(f"{self.endpunkte[self.aktiver]}: OK")
+                    self._endpunkt_bestaetigt = True
+                    return {"items": items, "gesamt": gesamt, "roh": daten}
                 if r.status_code in (429, 500, 502, 503, 504):
                     letzter_fehler = f"HTTP {r.status_code}"
                     warte = r.headers.get("Retry-After")
@@ -83,31 +196,54 @@ class BAClient:
                     self.schlafen(sek)
                     continue
                 letzter_fehler = f"HTTP {r.status_code}"
+                if not self._endpunkt_bestaetigt:
+                    self._beispiel_speichern(self.endpunkte[self.aktiver], r)
+                if r.status_code == 403 and not self._endpunkt_bestaetigt \
+                        and self.ua_index + 1 < len(USER_AGENTS):
+                    self.ua_index += 1          # mit anderer Programmkennung erneut versuchen
+                    self._ua_setzen()
+                    log.warning("  %s liefert HTTP 403 – versuche andere Programmkennung",
+                                self.endpunkte[self.aktiver])
+                    return self.suche(params)
+                naechster = True
                 break       # 400/401/403/404 -> nächsten Endpunkt probieren
-            else:
+            if not naechster:
                 # alle Versuche mit Netzwerk-/Serverfehlern aufgebraucht
                 raise ApiFehler(letzter_fehler or "unbekannter Fehler")
             if self._endpunkt_bestaetigt:
                 # Endpunkt funktioniert grundsätzlich – nur diese Anfrage ist fehlerhaft
                 raise ApiFehler(letzter_fehler)
+            self.versuchsprotokoll.append(f"{self.endpunkte[self.aktiver]}: {letzter_fehler}")
             if self.aktiver + 1 < len(self.endpunkte):
                 log.warning("  Endpunkt %s liefert %s – wechsle zu %s",
                             self.endpunkte[self.aktiver], letzter_fehler, self.endpunkte[self.aktiver + 1])
             self.aktiver += 1
-        raise ApiFehler(f"Kein Endpunkt erreichbar (zuletzt: {letzter_fehler})")
+            self.ua_index = 0
+            self._ua_setzen()
+        raise ApiFehler("Kein Endpunkt lieferte Anzeigen (" + "; ".join(self.versuchsprotokoll) + ")")
+
+
+def _text(wert) -> str:
+    if isinstance(wert, dict):
+        wert = wert.get("name") or wert.get("bezeichnung") or wert.get("titel") or ""
+    return str(wert or "").strip()
 
 
 def anzeige_umwandeln(item: dict) -> dict | None:
-    refnr = item.get("refnr") or item.get("refNr")
-    arbeitgeber = (item.get("arbeitgeber") or "").strip()
-    titel = (item.get("titel") or item.get("beruf") or "").strip()
+    refnr = _text(item.get("refnr") or item.get("refNr") or item.get("referenznummer") or item.get("hashId"))
+    arbeitgeber = _text(item.get("arbeitgeber") or item.get("arbeitgeberName") or item.get("firma"))
+    titel = _text(item.get("titel") or item.get("stellentitel") or item.get("stellenbezeichnung")
+                  or item.get("beruf"))
     if not refnr or not arbeitgeber or not titel:
         return None
-    ort = item.get("arbeitsort") or {}
+    ort = item.get("arbeitsort") or item.get("arbeitsorte") or {}
     if isinstance(ort, list):
         ort = ort[0] if ort else {}
+    if not isinstance(ort, dict):
+        ort = {"ort": str(ort)}
     koord = ort.get("koordinaten") or {}
-    veroeff = item.get("aktuelleVeroeffentlichungsdatum") or item.get("veroeffentlichungsdatum")
+    veroeff = (item.get("aktuelleVeroeffentlichungsdatum") or item.get("veroeffentlichungsdatum")
+               or item.get("veroeffentlichtAm") or item.get("ersteVeroeffentlichungsdatum"))
     return {
         "id": refnr,
         "quelle": QUELLE,
@@ -158,7 +294,8 @@ def abrufen(con, cfg: dict, flt: Filter | None = None, client: BAClient | None =
             log.info(grund)
             return {"uebersprungen": True, "grund": grund}
 
-    client = client or BAClient(cfg)
+    protokoll = pfad(cfg, "logs")
+    client = client or BAClient(cfg, protokoll_ordner=protokoll)
     a = cfg.get("arbeitsagentur") or {}
     size = min(100, int(a.get("seitengroesse", 100)))
     max_seiten = int(a.get("max_seiten", 30))
@@ -176,6 +313,9 @@ def abrufen(con, cfg: dict, flt: Filter | None = None, client: BAClient | None =
     neu = 0
     gefiltert: set[str] = set()
     schritt = 0
+    roh_anzeigen = 0          # Anzeigen in den API-Antworten (vor Umwandlung/Filter)
+    unlesbar = 0              # Anzeigen, deren Felder nicht erkannt wurden
+    abbruch_grund = ""
 
     abbruch = False
     for lauf, ort_params in laeufe:
@@ -201,15 +341,15 @@ def abrufen(con, cfg: dict, flt: Filter | None = None, client: BAClient | None =
                     log.error("  Fehler: %s", e)
                     if not client._endpunkt_bestaetigt:
                         abbruch = True     # API von Anfang an nicht erreichbar -> Abruf beenden
+                        abbruch_grund = str(e)
                     break
-                items = daten.get("stellenangebote") or []
-                try:
-                    treffer_gesamt = int(daten.get("maxErgebnisse") or 0)
-                except (TypeError, ValueError):
-                    treffer_gesamt = None
+                items = daten["items"]
+                treffer_gesamt = daten["gesamt"]
+                roh_anzeigen += len(items)
                 for item in items:
-                    job = anzeige_umwandeln(item)
+                    job = anzeige_umwandeln(item) if isinstance(item, dict) else None
                     if not job:
+                        unlesbar += 1
                         continue
                     if flt.titel_ausgeschlossen(job["titel"]):
                         gefiltert.add(job["id"])
@@ -235,9 +375,18 @@ def abrufen(con, cfg: dict, flt: Filter | None = None, client: BAClient | None =
                 seite += 1
 
     if abbruch:
-        meldungen.insert(0, "Die Arbeitsagentur-API war nicht erreichbar – Abruf abgebrochen. "
-                            "Internetverbindung prüfen und später erneut versuchen.")
+        meldungen.insert(0, "Die Arbeitsagentur-API hat keine Anzeigen geliefert – Abruf abgebrochen. "
+                            f"Details: {abbruch_grund}. Antwortbeispiele liegen im Ordner {protokoll}.")
         log.error(meldungen[0])
+    elif roh_anzeigen and unlesbar == roh_anzeigen:
+        fehler += 1
+        meldungen.insert(0, f"Die API lieferte {roh_anzeigen} Anzeigen, deren Format aber nicht erkannt wurde. "
+                            f"Antwortbeispiel: Ordner {protokoll} (Dateien api_antwort_*.txt).")
+        log.error(meldungen[0])
+    elif not abbruch and roh_anzeigen == 0 and vollstaendig:
+        meldungen.insert(0, "Die API hat geantwortet, aber für keinen Suchbegriff Anzeigen geliefert. "
+                            f"Antwortbeispiel: Ordner {protokoll} (Dateien api_antwort_*.txt).")
+        log.warning(meldungen[0])
     offline = offline_markieren(con, start, gesehen, vollstaendig, seit)
     erneut = erneut_ausgeschrieben_pruefen(con, cfg)
     erfolgreich = len(vollstaendig) > 0 and fehler == 0
