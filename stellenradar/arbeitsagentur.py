@@ -21,7 +21,7 @@ QUELLE = "Arbeitsagentur"
 DETAIL_URL = "https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}"
 
 
-STANDARD_ENDPUNKTE = ["pc/v4/jobs", "pc/v4/app/jobs", "pc/v6/jobs"]
+STANDARD_ENDPUNKTE = ["pc/v6/jobs", "pc/v4/jobs", "pc/v4/app/jobs"]
 # Manche Server lehnen unbekannte Programme ab (HTTP 403) – dann wird mit anderer Kennung erneut gefragt
 USER_AGENTS = [
     "Stellen-Radar/1.0",
@@ -29,7 +29,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/126.0 Safari/537.36",
 ]
-_LISTEN_SCHLUESSEL = ("stellenangebote", "stellenangebot", "jobs", "ergebnisse", "results", "content", "items")
+_LISTEN_SCHLUESSEL = ("ergebnisliste", "stellenangebote", "stellenangebot", "jobs", "ergebnisse", "results", "content", "items")
 _ANZAHL_SCHLUESSEL = ("maxErgebnisse", "totalElements", "total", "anzahl", "gesamt", "anzahlErgebnisse")
 
 
@@ -38,7 +38,7 @@ def _finde_liste(o, tiefe=0):
     if tiefe > 4:
         return None
     if isinstance(o, list) and o and all(isinstance(x, dict) for x in o[:3]):
-        if any(k in o[0] for k in ("refnr", "refNr", "referenznummer", "titel", "stellentitel")):
+        if any(k in o[0] for k in ("refnr", "refNr", "referenznummer", "titel", "stellenangebotsTitel")):
             return o
     werte = o.values() if isinstance(o, dict) else (o if isinstance(o, list) else [])
     for v in werte:
@@ -230,31 +230,44 @@ def _text(wert) -> str:
 
 
 def anzeige_umwandeln(item: dict) -> dict | None:
-    refnr = _text(item.get("refnr") or item.get("refNr") or item.get("referenznummer") or item.get("hashId"))
-    arbeitgeber = _text(item.get("arbeitgeber") or item.get("arbeitgeberName") or item.get("firma"))
-    titel = _text(item.get("titel") or item.get("stellentitel") or item.get("stellenbezeichnung")
-                  or item.get("beruf"))
+    """Wandelt eine Anzeige aus der API in das eigene Format um.
+    Unterstützt das Format von pc/v6/jobs (referenznummer, stellenangebotsTitel, firma,
+    stellenlokationen) und das ältere von pc/v4 (refnr, titel, arbeitgeber, arbeitsort)."""
+    refnr = _text(item.get("referenznummer") or item.get("refnr") or item.get("refNr") or item.get("hashId"))
+    arbeitgeber = _text(item.get("firma") or item.get("arbeitgeber") or item.get("arbeitgeberName"))
+    titel = _text(item.get("stellenangebotsTitel") or item.get("titel") or item.get("stellentitel")
+                  or item.get("stellenbezeichnung") or item.get("hauptberuf") or item.get("beruf"))
     if not refnr or not arbeitgeber or not titel:
         return None
-    ort = item.get("arbeitsort") or item.get("arbeitsorte") or {}
+
+    # Arbeitsort: v6 -> stellenlokationen[0].adresse + breite/laenge; v4 -> arbeitsort.koordinaten
+    ort = item.get("stellenlokationen") or item.get("arbeitsort") or item.get("arbeitsorte") or {}
     if isinstance(ort, list):
         ort = ort[0] if ort else {}
     if not isinstance(ort, dict):
         ort = {"ort": str(ort)}
+    adresse = ort.get("adresse") if isinstance(ort.get("adresse"), dict) else ort
     koord = ort.get("koordinaten") or {}
-    veroeff = (item.get("aktuelleVeroeffentlichungsdatum") or item.get("veroeffentlichungsdatum")
-               or item.get("veroeffentlichtAm") or item.get("ersteVeroeffentlichungsdatum"))
+    lat = ort.get("breite", koord.get("lat"))
+    lon = ort.get("laenge", koord.get("lon"))
+    strasse = " ".join(x for x in [_text(adresse.get("strasse")), _text(adresse.get("hausnummer"))] if x) or None
+
+    zeitraum = item.get("veroeffentlichungszeitraum") or {}
+    veroeff = (item.get("datumErsteVeroeffentlichung")
+               or (zeitraum.get("von") if isinstance(zeitraum, dict) else None)
+               or item.get("aktuelleVeroeffentlichungsdatum") or item.get("veroeffentlichungsdatum")
+               or item.get("ersteVeroeffentlichungsdatum"))
     return {
         "id": refnr,
         "quelle": QUELLE,
         "refnr": refnr,
         "titel": titel,
         "arbeitgeber": arbeitgeber,
-        "ort": ort.get("ort"),
-        "plz": ort.get("plz"),
-        "strasse": ort.get("strasse"),
-        "lat": koord.get("lat"),
-        "lon": koord.get("lon"),
+        "ort": _text(adresse.get("ort")) or None,
+        "plz": _text(adresse.get("plz")) or None,
+        "strasse": strasse,
+        "lat": lat,
+        "lon": lon,
         "veroeffentlicht": str(veroeff)[:10] if veroeff else None,
         "url": DETAIL_URL.format(refnr=refnr),
         "externe_url": item.get("externeUrl"),

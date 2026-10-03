@@ -46,7 +46,8 @@ class FakeResponse:
 class FakeSession:
     """Simuliert die API. `stellen` kann zwischen Läufen verändert werden."""
 
-    def __init__(self, stellen=None, heute=None, v4_status=200, fehler_bei=None):
+    def __init__(self, stellen=None, heute=None, v4_status=200, fehler_bei=None, format="v4"):
+        self.format = format
         self.stellen = list(stellen if stellen is not None else STANDARD)
         self.heute = heute or date.today()
         self.v4_status = v4_status
@@ -67,6 +68,16 @@ class FakeSession:
                 continue
             if "wo" in params and _km(lat, lon) > int(params["umkreis"]):
                 continue
+            datum = (self.heute - timedelta(days=alt)).isoformat()
+            if self.format == "v6":       # Format von pc/v6/jobs (Stand Oktober 2026)
+                treffer.append({
+                    "stellenangebotsTitel": titel, "hauptberuf": titel.split(" (")[0], "firma": ag,
+                    "referenznummer": refnr, "datumErsteVeroeffentlichung": datum,
+                    "veroeffentlichungszeitraum": {"von": datum},
+                    "stellenlokationen": [{"adresse": {"plz": plz, "ort": ort, "land": "DEUTSCHLAND"},
+                                           "breite": lat, "laenge": lon}],
+                })
+                continue
             treffer.append({
                 "beruf": titel.split(" (")[0], "titel": titel, "refnr": refnr, "arbeitgeber": ag,
                 "aktuelleVeroeffentlichungsdatum": (self.heute - timedelta(days=alt)).isoformat(),
@@ -76,5 +87,8 @@ class FakeSession:
             })
         size, page = int(params["size"]), int(params["page"])
         seite = treffer[(page - 1) * size: page * size]
+        if self.format == "v6":
+            return FakeResponse(200, {"ergebnisliste": seite, "maxErgebnisse": len(treffer),
+                                      "page": page, "size": size, "facetten": {}})
         return FakeResponse(200, {"stellenangebote": seite, "maxErgebnisse": str(len(treffer)),
                                   "page": str(page), "size": str(size)})

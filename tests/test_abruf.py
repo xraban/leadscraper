@@ -26,9 +26,10 @@ def lauf(cfg, con, flt, session):
     return arbeitsagentur.abrufen(con, cfg, flt, client=client, erzwingen=True)
 
 
-def test_erster_abruf(umgebung):
+@pytest.mark.parametrize("format", ["v4", "v6"])
+def test_erster_abruf(umgebung, format):
     cfg, con, flt = umgebung
-    erg = lauf(cfg, con, flt, FakeSession())
+    erg = lauf(cfg, con, flt, FakeSession(format=format))
     assert erg["erfolgreich"]
     ids = {r["id"] for r in con.execute("SELECT id FROM jobs")}
     # Junior, Werkstudent, Ausbildung sind rausgefiltert
@@ -78,10 +79,12 @@ def test_fehler_markiert_nichts_offline(umgebung):
 
 def test_endpunkt_wechsel(umgebung):
     cfg, con, flt = umgebung
+    cfg["arbeitsagentur"]["endpunkte"] = ["pc/v4/jobs", "pc/v4/app/jobs", "pc/v6/jobs"]
     s = FakeSession(v4_status=404)
     erg = lauf(cfg, con, flt, s)
     assert erg["erfolgreich"]
     assert s.aufrufe[0][0].endswith("pc/v4/jobs") and s.aufrufe[-1][0].endswith("pc/v6/jobs")
+    assert not any(a[0].endswith("pc/v4/jobs") for a in s.aufrufe[3:])   # bleibt beim funktionierenden
     p = s.aufrufe[-1][1]
     assert p["angebotsart"] == 1 and p["zeitarbeit"] == "false" and p["pav"] == "false"
 
@@ -170,3 +173,23 @@ def test_null_treffer_meldung(umgebung):
     cfg, con, flt = umgebung
     erg = lauf(cfg, con, flt, FakeSession(stellen=[]))
     assert "für keinen Suchbegriff Anzeigen" in erg["meldungen"][0]
+
+
+def test_echte_v6_antwort():
+    """Echte Antwort von pc/v6/jobs (Stand 03.10.2026, gekürzt auf 3 Anzeigen)."""
+    import json
+    from pathlib import Path
+
+    daten = json.loads((Path(__file__).parent / "daten" / "ba_v6_antwort.json").read_text(encoding="utf-8"))
+    items, gesamt = arbeitsagentur.antwort_lesen(daten)
+    assert len(items) == 3 and gesamt == 123
+    jobs = [arbeitsagentur.anzeige_umwandeln(i) for i in items]
+    j = jobs[0]
+    assert j["id"] == "10000-1208051685-S" and j["titel"] == "DevOps Engineer (m/w/d)"
+    assert j["arbeitgeber"] == "ITech Progress GmbH"
+    assert (j["plz"], j["ort"], j["strasse"]) == ("67059", "Ludwigshafen am Rhein", "Donnersbergweg 4")
+    assert (j["lat"], j["lon"]) == (49.471596, 8.4240225)
+    assert j["veroeffentlicht"] == "2026-09-28"
+    assert j["url"] == "https://www.arbeitsagentur.de/jobsuche/jobdetail/10000-1208051685-S"
+    assert jobs[1]["plz"] is None and jobs[1]["ort"] == "Neu-Isenburg" and jobs[1]["strasse"] is None
+    assert jobs[2]["veroeffentlicht"] == "2026-08-19"
