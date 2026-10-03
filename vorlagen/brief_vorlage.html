@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Brief</title>
+<!--
+  BEISPIEL-BRIEFVORLAGE (DIN 5008, Form B, für Fensterumschläge DIN lang / C5 / C4)
+  ---------------------------------------------------------------------------------
+  Ersetzen Sie diese Datei durch Ihre eigene Vorlage (gleicher Dateiname) oder
+  passen Sie Texte und Absender unten an.
+
+  Verfügbare Platzhalter:
+    {firma}         Firmenname
+    {anrede}        Herr / Frau
+    {person}        Name des Ansprechpartners (z. B. "Max Müller")
+    {position}      Position des Ansprechpartners
+    {strasse}       Straße und Hausnummer
+    {ort}           PLZ und Ort  (z. B. "69469 Weinheim")
+    {plz} {nur_ort} PLZ bzw. Ort einzeln
+    {anschrift}     komplette Anschrift (Leerzeilen werden weggelassen)
+    {briefanrede}   "Sehr geehrter Herr Müller," / "Sehr geehrte Damen und Herren,"
+    {betreff}       Betreff (im Dashboard bearbeitbar)
+    {einstieg}      Einstiegssatz (im Dashboard bearbeitbar)
+    {datum}         z. B. "3. Oktober 2026"      {datum_kurz}  "03.10.2026"
+    {absender_ort}  aus config.yaml
+    {qr_url}        Link hinter dem QR-Code (mit utm_source=brief&utm_campaign=...)
+                    <img src="{qr_url}"> wird automatisch zum QR-Code-Bild.
+    {qr_url_kurz}   Link ohne utm-Zusatz – zum Abdrucken als Text
+
+  Hinweis: Die PDF-Erzeugung (xhtml2pdf) versteht einfaches CSS. Für feste Positionen
+  (Anschriftfeld im Fenster) werden @frame-Bereiche verwendet, siehe unten.
+  Maße DIN 5008 Form B: Anschriftfeld 20 mm von links, 45 mm von oben, 85 x 45 mm.
+-->
+<style>
+  @page {
+    size: a4 portrait;
+    margin: 0;
+    @frame kopf      { -pdf-frame-content: kopf_inhalt;     left: 25mm;  top: 12mm;  width: 165mm; height: 28mm; }
+    @frame ruecksend { -pdf-frame-content: ruecksend_inhalt; left: 25mm; top: 56mm;  width: 80mm;  height: 5mm; }
+    @frame adresse   { -pdf-frame-content: adresse_inhalt;  left: 25mm;  top: 63mm;  width: 80mm;  height: 27mm; }
+    @frame info      { -pdf-frame-content: info_inhalt;     left: 125mm; top: 50mm;  width: 65mm;  height: 40mm; }
+    @frame falz1     { -pdf-frame-content: falz1_inhalt;    left: 4mm;   top: 105mm; width: 6mm;   height: 6mm; }
+    @frame loch      { -pdf-frame-content: loch_inhalt;     left: 4mm;   top: 148.5mm; width: 8mm; height: 6mm; }
+    @frame falz2     { -pdf-frame-content: falz2_inhalt;    left: 4mm;   top: 210mm; width: 6mm;   height: 6mm; }
+    @frame fuss      { -pdf-frame-content: fuss_inhalt;     left: 25mm;  top: 280mm; width: 165mm; height: 12mm; }
+    @frame text      { left: 25mm; top: 98.5mm; width: 165mm; height: 175mm; }
+  }
+  body      { font-family: Helvetica; font-size: 10.5pt; line-height: 1.35; color: #222; }
+  .firma    { font-size: 15pt; font-weight: bold; color: #1f4e79; }
+  .klein    { font-size: 7pt; color: #555; }
+  .info     { font-size: 9pt; color: #333; }
+  .betreff  { font-weight: bold; font-size: 11pt; margin-bottom: 8mm; }
+  .fuss     { font-size: 7.5pt; color: #666; border-top: 0.5pt solid #999; padding-top: 1.5mm; }
+  .marke    { border-top: 0.5pt solid #999; font-size: 1pt; line-height: 1pt; }
+  p         { margin: 0 0 3.5mm 0; }
+</style>
+</head>
+<body>
+
+<div id="kopf_inhalt">
+  <span class="firma">IHR FIRMENNAME</span><br/>
+  <span class="info">IT-Personalvermittlung · Direktvermittlung für den Mittelstand</span>
+</div>
+
+<div id="ruecksend_inhalt" class="klein">IHR FIRMENNAME · Musterstraße 1 · 69488 Birkenau</div>
+
+<div id="adresse_inhalt">{anschrift}</div>
+
+<div id="info_inhalt" class="info">
+  Ihr Ansprechpartner:<br/>
+  VORNAME NACHNAME<br/>
+  Telefon: 06201 000000<br/>
+  E-Mail: name@ihre-website.de<br/><br/>
+  {absender_ort}, {datum}
+</div>
+
+<div id="falz1_inhalt" class="marke">&nbsp;</div>
+<div id="loch_inhalt" class="marke">&nbsp;</div>
+<div id="falz2_inhalt" class="marke">&nbsp;</div>
+
+<div id="fuss_inhalt" class="fuss">
+  IHR FIRMENNAME · Musterstraße 1 · 69488 Birkenau · www.ihre-website.de · USt-IdNr. DE000000000
+</div>
+
+<div class="betreff">{betreff}</div>
+
+<p>{briefanrede}</p>
+
+<p>{einstieg}</p>
+
+<p>Als regional verwurzelte Personalvermittlung mit Schwerpunkt IT finde ich für Unternehmen
+aus dem Mittelstand Fachkräfte, die nicht aktiv auf Jobsuche sind – und damit in keiner
+Stellenbörse auftauchen. Sie zahlen nur im Erfolgsfall.</p>
+
+<p>Darf ich Ihnen in einem kurzen Telefonat zeigen, wie ich Sie unterstützen kann?
+Scannen Sie einfach den QR-Code oder rufen Sie mich direkt an.</p>
+
+<table style="margin-top: 4mm;">
+  <tr>
+    <td style="width: 30mm;"><img src="{qr_url}" width="26mm" height="26mm"/></td>
+    <td class="info" style="vertical-align: middle;">Termin vereinbaren:<br/>{qr_url_kurz}</td>
+  </tr>
+</table>
+
+<p style="margin-top: 6mm;">Mit freundlichen Grüßen</p>
+<p style="margin-top: 12mm;">VORNAME NACHNAME</p>
+
+</body>
+</html>

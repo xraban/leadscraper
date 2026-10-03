@@ -141,11 +141,12 @@ briefe:
   qr_basis_url: https://www.ihre-website.de/kontakt
   absender_ort: Birkenau
   # Vorschläge (Platzhalter: {titel} {titel2} {anzahl} {wochen} {firma} {fachbereich})
+  # Hinweis: Der Einstieg folgt auf "Sehr geehrte/r ...," – daher klein beginnen (außer Sie/Ihre).
   betreff_eine_stelle: "Ihre Vakanz {titel}"
   betreff_mehrere_stellen: "Ihre {anzahl} offenen IT-Positionen"
   einstieg_eine_stelle: "Sie suchen derzeit eine/n {titel}. Gerne stelle ich Ihnen passende Kandidatinnen und Kandidaten aus meinem Netzwerk vor – im Rahmen einer klassischen Direktvermittlung."
   einstieg_lange_offen: "Ihre Stelle als {titel} ist bereits seit rund {wochen} Wochen ausgeschrieben. Erfahrungsgemäß lassen sich gerade solche Positionen über eine gezielte Direktansprache deutlich schneller besetzen."
-  einstieg_erneut: "Mir ist aufgefallen, dass Sie die Position {titel} erneut ausgeschrieben haben. Gerne unterstütze ich Sie dabei, diese Stelle diesmal nachhaltig zu besetzen."
+  einstieg_erneut: "mir ist aufgefallen, dass Sie die Position {titel} erneut ausgeschrieben haben. Gerne unterstütze ich Sie dabei, diese Stelle diesmal nachhaltig zu besetzen."
   einstieg_mehrere: "Sie suchen aktuell gleich {anzahl} IT-Fachkräfte, unter anderem eine/n {titel} und eine/n {titel2}. Gerne stelle ich Ihnen passende Kandidatinnen und Kandidaten im Rahmen einer Direktvermittlung vor."
   lange_offen_ab_tagen: 42
 

@@ -1,13 +1,14 @@
 """Stellen-Radar – Dashboard (Streamlit).  Start:  streamlit run dashboard.py"""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 import yaml
 
-from stellenradar import arbeitsagentur, db, watchlist
+from stellenradar import arbeitsagentur, briefe, db, watchlist
 from stellenradar.config import CONFIG_DATEI, STATUS_WERTE, ConfigFehler, lade_config, pfad
 from stellenradar.export import excel_bytes
 from stellenradar.filter import Filter, blacklist_hinzufuegen
@@ -226,9 +227,36 @@ with tab_firmen:
                 st.link_button("LinkedIn öffnen", firma["linkedin"])
 
             # ---------- Brief
-            briefbereich = globals().get("brief_bereich")
-            if briefbereich:
-                briefbereich(key, zeile, jobs, firma)
+            with st.expander("✉️ Brief erstellen", expanded=False):
+                b_vor, e_vor = briefe.vorschlag(CFG, str(zeile["Firma"]), jobs)
+                if st.button("↺ Vorschlag neu laden", key=f"reset_{key}"):
+                    st.session_state[f"betreff_{key}"] = b_vor
+                    st.session_state[f"einstieg_{key}"] = e_vor
+                betreff = st.text_input("Betreff", value=b_vor, key=f"betreff_{key}")
+                einstieg = st.text_area("Einstiegssatz", value=e_vor, key=f"einstieg_{key}", height=110)
+                st.caption("QR-Code führt zu: " + briefe.qr_link(CFG, str(zeile["Firma"])))
+                if not (firma.get("strasse") and firma.get("ort")):
+                    st.warning("Für den Fensterumschlag fehlt noch die Anschrift (Straße/Ort). "
+                               "Bitte oben unter „Kontakt & Status“ eintragen und speichern.")
+                if st.button("📄 Brief erstellen", type="primary", key=f"brief_{key}"):
+                    try:
+                        pdf = briefe.brief_erstellen(CFG, firma, str(zeile["Firma"]), betreff, einstieg)
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Brief konnte nicht erstellt werden: {e}")
+                    else:
+                        notiz = (firma.get("notizen") or "").rstrip()
+                        notiz += ("\n" if notiz else "") + f"{date.today():%d.%m.%Y}: Brief erstellt – {betreff}"
+                        db.firma_speichern(CON, key, {"status": "Brief raus",
+                                                      "letzte_aktion": date.today().isoformat(),
+                                                      "notizen": notiz})
+                        st.session_state["letzter_brief"] = (key, str(pdf))
+                        st.rerun()
+                letzter_brief = st.session_state.get("letzter_brief")
+                if letzter_brief and letzter_brief[0] == key and Path(letzter_brief[1]).exists():
+                    pdf = Path(letzter_brief[1])
+                    st.success(f"Brief erstellt und Status auf „Brief raus“ gesetzt. Gespeichert unter: {pdf}")
+                    st.download_button("⬇️ PDF herunterladen", pdf.read_bytes(), file_name=pdf.name,
+                                       mime="application/pdf", key=f"dl_{key}")
 
             if not zeile["Blacklist"]:
                 if st.button("🚫 Firma auf die Blacklist setzen", key=f"bl_{key}"):
