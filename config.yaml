@@ -1,0 +1,153 @@
+# =====================================================================
+#  STELLEN-RADAR – Einstellungen
+#  Diese Datei können Sie mit jedem Texteditor (z. B. Notepad, TextEdit)
+#  bearbeiten. Wichtig: Einrückungen (Leerzeichen am Zeilenanfang) nicht
+#  verändern und keine Tabulatoren verwenden. Zeilen mit # sind Kommentare.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Suchbegriffe, gruppiert nach Fachbereich.
+#   begriffe:          werden bei der Arbeitsagentur gesucht
+#   schluesselwoerter: erkennen IT-Stellen auf Karriereseiten (Watchlist)
+#                      und ordnen Stellen einem Fachbereich zu
+#                      (Groß-/Kleinschreibung egal, Teilwort genügt)
+# ---------------------------------------------------------------------
+fachbereiche:
+  DevOps & Cloud:
+    begriffe: [DevOps Engineer, Cloud Engineer, Kubernetes]
+    schluesselwoerter: [devops, cloud, kubernetes, k8s, azure, aws, terraform, platform engineer, site reliability, sre]
+  SAP:
+    begriffe: [SAP Entwickler, SAP Berater, SAP Basis]
+    schluesselwoerter: [sap, abap, s/4hana, s4hana]
+  IT-Security:
+    begriffe: [IT Security Engineer, Informationssicherheit]
+    schluesselwoerter: [security, sicherheit, isms, cyber, penetration, soc analyst, ciso, isb]
+  Data:
+    begriffe: [Data Engineer]
+    schluesselwoerter: [data engineer, data scientist, data analyst, bi developer, business intelligence, datenbank, etl]
+  Softwareentwicklung:
+    begriffe: [Softwareentwickler Java, Softwareentwickler .NET, Embedded Softwareentwickler]
+    schluesselwoerter: [softwareentwickler, anwendungsentwickler, applikationsentwickler, webentwickler, software engineer, software developer, entwickler, developer, programmierer, java, .net, c#, embedded, firmware, fullstack, full-stack, backend, frontend]
+  IT-Infrastruktur:
+    begriffe: [Systemadministrator Linux, Netzwerkadministrator]
+    schluesselwoerter: [systemadministrator, system administrator, administrator, netzwerk, network, linux, it-administrator, it administrator, system engineer, systemingenieur, it-support, 2nd level, 1st level]
+  IT-Projektleitung:
+    begriffe: [IT-Projektleiter]
+    schluesselwoerter: [it-projektleiter, it projektleiter, projektleiter it, it-projektmanager, it project manager, scrum master, product owner]
+  IT allgemein:
+    begriffe: []   # keine eigene Suche – erkennt nur sonstige IT-Stellen auf Karriereseiten
+    schluesselwoerter: [informatiker, wirtschaftsinformatik, "it-", "it ", edv, it consultant, it-consultant, it-spezialist, it spezialist]
+
+# ---------------------------------------------------------------------
+# Arbeitsagentur (Jobsuche-API)
+# ---------------------------------------------------------------------
+arbeitsagentur:
+  basis_url: https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/
+  # Wird der erste Endpunkt abgelehnt, wird automatisch der nächste probiert
+  endpunkte: [pc/v4/app/jobs, pc/v6/jobs]
+  api_key: jobboerse-jobsuche
+  # Nur Anzeigen, die in den letzten X Tagen veröffentlicht wurden.
+  # 0 = keine Einschränkung (empfohlen, damit lange offene Stellen sichtbar sind)
+  veroeffentlichtseit: 0
+  seitengroesse: 100        # Anzeigen pro Anfrage (max. 100)
+  max_seiten: 30            # Sicherheitsgrenze pro Suchbegriff und Suchlauf
+  pause_sekunden: 1.5       # Pause zwischen zwei Anfragen
+  timeout_sekunden: 30
+  wiederholungen: 3         # Wiederholversuche bei Fehlern
+  # Ein neuer Abruf wird übersprungen, wenn der letzte erfolgreiche
+  # weniger als so viele Stunden her ist (außer man erzwingt ihn)
+  mindestabstand_stunden: 6
+
+suchlaeufe:
+  regional:
+    wo: "69488"             # Birkenau
+    umkreis: 80             # km
+  bundesweit:
+    aktiv: true
+
+# ---------------------------------------------------------------------
+# Region: Mittelpunkt und Radius für "liegt in der Region"
+# (zusätzlich zählen PLZ-Bereiche, falls keine Koordinaten vorhanden sind)
+# ---------------------------------------------------------------------
+region:
+  name: Rhein-Neckar / Bergstraße / Südhessen
+  lat: 49.5626
+  lon: 8.7065
+  radius_km: 80
+  plz_praefixe: ["68", "69", "64", "67", "74", "76", "55", "65"]
+
+# ---------------------------------------------------------------------
+# Filter
+# ---------------------------------------------------------------------
+filter:
+  # Anzeigen, deren Titel eines dieser Wörter enthält, werden ignoriert
+  titel_ausschluss: [junior, werkstudent, werkstudentin, working student, praktikum,
+                     praktikant, praktikantin, internship, ausbildung, auszubildende,
+                     azubi, duales studium, dualer student, abschlussarbeit,
+                     bachelorarbeit, masterarbeit, minijob, aushilfe]
+  # Arbeitgeber, deren Name eines dieser Wörter enthält, werden als
+  # "Personaldienstleister?" MARKIERT (nicht gelöscht). Ein Hinweis passt,
+  # wenn ein Wort im Firmennamen damit BEGINNT ("personal" -> "Personalservice")
+  personaldienstleister_hinweise: [personal, recruiting, recruitment, staffing, zeitarbeit,
+                     arbeitnehmerüberlassung, personaldienst, personalvermittlung,
+                     personalberatung, headhunt, hays, randstad, adecco, gulp, brunel,
+                     amadeus fire, manpower, experis, akkodis, ferchau, orizon, dis ag,
+                     tempton, persona service, avanti, solcom, etengo, freelancermap,
+                     academic work, michael page, robert half, page personnel, univativ,
+                     modis, bertrandt, westhouse, computer futures,
+                     darwin recruitment, jobot]
+  blacklist_datei: blacklist.txt
+
+# ---------------------------------------------------------------------
+# "Erneut ausgeschrieben": gleiche Firma, sehr ähnlicher Titel, neue Ref.-Nr.
+# ---------------------------------------------------------------------
+erneut_ausgeschrieben:
+  aehnlichkeit: 0.85        # 0..1 – wie ähnlich die Titel sein müssen
+  min_abstand_tage: 14      # Vorgänger muss mind. so viele Tage älter sein
+  gleicher_ort: true        # nur wenn der Arbeitsort gleich ist
+
+# ---------------------------------------------------------------------
+# Scoring – je höher der Score, desto interessanter die Firma
+# ---------------------------------------------------------------------
+scoring:
+  punkte_pro_stelle: 10           # je offene IT-Stelle
+  max_punkte_stellen: 50
+  punkte_pro_tag_offen: 0.5       # je Tag, den die älteste Anzeige offen ist
+  max_punkte_alter: 30
+  bonus_erneut_ausgeschrieben: 20
+  bonus_regional: 25
+  abzug_personaldienstleister: 30 # Abzug bei Verdacht auf Personaldienstleister
+
+# Wie viele Tage gilt eine Stelle als "neu"?
+neu_tage: 1
+
+# ---------------------------------------------------------------------
+# Karriereseiten-Watchlist
+# ---------------------------------------------------------------------
+watchlist:
+  user_agent: "Stellen-Radar/1.0 (Lead-Recherche; einmal taeglich)"
+  # Seiten OHNE Feed werden höchstens so oft abgerufen (Stunden)
+  html_mindestabstand_stunden: 20
+  pause_sekunden: 2
+  timeout_sekunden: 30
+
+# ---------------------------------------------------------------------
+# Briefe
+# ---------------------------------------------------------------------
+briefe:
+  vorlage: vorlagen/brief_vorlage.html
+  ausgabe_ordner: briefe
+  # Ziel des QR-Codes; utm_source=brief und utm_campaign=<firma> werden angehängt
+  qr_basis_url: https://www.ihre-website.de/kontakt
+  absender_ort: Birkenau
+  # Vorschläge (Platzhalter: {titel} {titel2} {anzahl} {wochen} {firma} {fachbereich})
+  betreff_eine_stelle: "Ihre Vakanz {titel}"
+  betreff_mehrere_stellen: "Ihre {anzahl} offenen IT-Positionen"
+  einstieg_eine_stelle: "Sie suchen derzeit eine/n {titel}. Gerne stelle ich Ihnen passende Kandidatinnen und Kandidaten aus meinem Netzwerk vor – im Rahmen einer klassischen Direktvermittlung."
+  einstieg_lange_offen: "Ihre Stelle als {titel} ist bereits seit rund {wochen} Wochen ausgeschrieben. Erfahrungsgemäß lassen sich gerade solche Positionen über eine gezielte Direktansprache deutlich schneller besetzen."
+  einstieg_erneut: "Mir ist aufgefallen, dass Sie die Position {titel} erneut ausgeschrieben haben. Gerne unterstütze ich Sie dabei, diese Stelle diesmal nachhaltig zu besetzen."
+  einstieg_mehrere: "Sie suchen aktuell gleich {anzahl} IT-Fachkräfte, unter anderem eine/n {titel} und eine/n {titel2}. Gerne stelle ich Ihnen passende Kandidatinnen und Kandidaten im Rahmen einer Direktvermittlung vor."
+  lange_offen_ab_tagen: 42
+
+# Ablageort der Datenbank (relativ zum Programmordner)
+datenbank: daten/stellenradar.db

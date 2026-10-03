@@ -1,0 +1,24 @@
+# =====================================================================
+#  BLACKLIST – Arbeitgeber, die im Stellen-Radar ausgeblendet werden
+#  Ein Eintrag pro Zeile. Groß-/Kleinschreibung ist egal.
+#  Ein Eintrag passt, wenn er als ganze(s) Wort(e) im Firmennamen steht:
+#    "Siemens"  blendet "Siemens AG" und "Siemens Healthineers AG" aus.
+#  Rechtsformen (GmbH, AG ...) können Sie weglassen.
+#  Zeilen mit # sind Kommentare. Auch im Dashboard bearbeitbar.
+# =====================================================================
+
+# --- Personaldienstleister ---
+Hays
+Randstad
+Adecco
+Gulp
+Brunel
+Amadeus Fire
+
+# --- Konzerne ---
+SAP SE
+BASF
+Deutsche Bahn
+Deutsche Telekom
+
+# --- bereits erledigt ---
