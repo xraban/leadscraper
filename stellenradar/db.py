@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS watchlist (
     url                TEXT NOT NULL,
     system             TEXT,
     feed_url           TEXT,
+    seite_url          TEXT,               -- erkannte Stellenseite des Systems
     aktiv              INTEGER DEFAULT 1,
     letzter_abruf      TEXT,
     letzter_erfolg     TEXT,
@@ -97,7 +98,19 @@ def verbinden(db_pfad: Path | str) -> sqlite3.Connection:
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
     con.executescript(SCHEMA)
+    _migrieren(con)
     return con
+
+
+def _migrieren(con: sqlite3.Connection) -> None:
+    """Ergänzt Spalten, die in neueren Versionen hinzugekommen sind."""
+    neu = {"watchlist": {"seite_url": "TEXT"}}
+    for tabelle, spalten in neu.items():
+        vorhanden = {r[1] for r in con.execute(f"PRAGMA table_info({tabelle})")}
+        for name, typ in spalten.items():
+            if name not in vorhanden:
+                con.execute(f"ALTER TABLE {tabelle} ADD COLUMN {name} {typ}")
+    con.commit()
 
 
 # ---------------------------------------------------------------- Firmen
@@ -136,7 +149,7 @@ def watchlist_hinzufuegen(con: sqlite3.Connection, firma: str, url: str) -> int:
 
 
 def watchlist_aendern(con: sqlite3.Connection, wid: int, **werte) -> None:
-    erlaubt = {"firma", "url", "system", "feed_url", "aktiv", "letzter_abruf",
+    erlaubt = {"firma", "url", "system", "feed_url", "seite_url", "aktiv", "letzter_abruf",
                "letzter_erfolg", "letzte_meldung", "erstabruf_erledigt"}
     werte = {k: v for k, v in werte.items() if k in erlaubt}
     if werte:

@@ -124,6 +124,7 @@ with tab_firmen:
         k4.metric("Erneut ausgeschrieben", int(gefiltert["Erneut ausgeschrieben"].sum()))
 
         anzeige = gefiltert.drop(columns=["firma_key", "Blacklist"])
+        anzeige = anzeige[["Firma", "Neu"] + [c for c in anzeige.columns if c not in ("Firma", "Neu")]]
 
         def _hervorheben(zeile):
             if zeile["Neu"] == "NEU (Karriereseite)":
@@ -147,6 +148,8 @@ with tab_firmen:
                 "Regional": st.column_config.CheckboxColumn("Regional"),
                 "Personaldienstleister?": st.column_config.CheckboxColumn("PDL?"),
                 "Älteste Anzeige (Tage)": st.column_config.NumberColumn("Älteste (Tage)"),
+                "Neu": st.column_config.TextColumn("Neu", width="medium"),
+                "Firma": st.column_config.TextColumn("Firma", width="medium"),
             },
         )
         st.download_button(
@@ -282,10 +285,16 @@ with tab_watch:
             url = w_url.strip()
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
-            wid = db.watchlist_hinzufuegen(CON, w_firma, url)
-            with st.spinner("Erkenne System und rufe Stellen ab …"):
-                erg = watchlist.eintrag_abrufen(CON, CFG, FLT, wid, erzwingen=True)
-            st.success(f"Hinzugefügt: {erg.get('meldung', '')}")
+            if any(e["url"].rstrip("/") == url.rstrip("/") for e in db.watchlist_laden(CON)):
+                st.warning("Diese Karriereseite steht schon auf der Watchlist.")
+            else:
+                wid = db.watchlist_hinzufuegen(CON, w_firma, url)
+                with st.spinner("Erkenne System und rufe Stellen ab …"):
+                    erg = watchlist.eintrag_abrufen(CON, CFG, FLT, wid, erzwingen=True)
+                if erg.get("status") == "ok":
+                    st.success(f"Hinzugefügt – {erg.get('meldung', '')}")
+                else:
+                    st.warning(f"Hinzugefügt, aber noch keine Stellen gelesen: {erg.get('meldung', '')}")
 
     eintraege = db.watchlist_laden(CON)
     if eintraege:
@@ -294,6 +303,9 @@ with tab_watch:
             "SELECT watch_id, COUNT(*) FROM jobs WHERE quelle='Karriereseite' AND online=1 GROUP BY watch_id")}
         wdf["IT-Stellen"] = wdf["id"].map(it_stellen).fillna(0).astype(int)
         wdf["aktiv"] = wdf["aktiv"].astype(bool)
+        wdf["system"] = [(f"{sy} (Feed)" if fu else sy) if sy else "noch nicht erkannt"
+                         for sy, fu in zip(wdf["system"], wdf["feed_url"])]
+        wdf["letzte_meldung"] = wdf["letzte_meldung"].fillna("")
         wdf["Löschen"] = False
         wdf["letzter_abruf"] = wdf["letzter_abruf"].map(lambda t: (_datum_de(t) + " " + t[11:16]) if t else "")
         bearbeitet = st.data_editor(
@@ -314,7 +326,8 @@ with tab_watch:
                     alt = next(e for e in eintraege if e["id"] == r["id"])
                     aenderung = {"firma": r["firma"], "url": r["url"], "aktiv": int(bool(r["aktiv"]))}
                     if r["url"] != alt["url"]:
-                        aenderung.update(system=None, feed_url=None)   # neu erkennen
+                        aenderung.update(system=None, feed_url=None, seite_url=None, letzter_abruf=None,
+                                         erstabruf_erledigt=0)   # neu erkennen
                     db.watchlist_aendern(CON, int(r["id"]), **aenderung)
             st.success("Gespeichert.")
             st.rerun()

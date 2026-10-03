@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-from .filter import Filter
+from .filter import Filter, titel_normal
 
 SPALTEN = ["firma_key", "Firma", "Score", "Offene Stellen", "Älteste Anzeige (Tage)",
            "Erneut ausgeschrieben", "Regional", "Neu", "Fachbereiche", "Orte", "Quellen",
@@ -70,12 +70,15 @@ def firmen_uebersicht(con, cfg: dict, flt: Filter | None = None, heute: date | N
         alter = max((_tage(j["kette_start"] or j["veroeffentlicht"] or j["erstmals_gesehen"], heute) or 0
                      for j in online), default=0)
         erneut = any(j["erneut_ausgeschrieben"] for j in online)
-        regional = any(j["regional"] for j in basis)
+        # regional: eine Anzeige liegt in der Region – oder die gepflegte Firmenanschrift
+        regional = any(j["regional"] for j in basis) or flt.ist_regional(f.get("plz"))
         # häufigster Arbeitgebername als Anzeigename
         namen = pd.Series([j["arbeitgeber"] for j in js]).value_counts()
         name = f.get("name") or namen.index[0]
         pdl = flt.ist_personaldienstleister(name)
-        score, details = score_berechnen(cfg, len(online), alter, erneut, regional, pdl)
+        # gleiche Stelle (Arbeitsagentur + Karriereseite oder alte + neue Anzeige) nur einmal zählen
+        stellen = len({titel_normal(j["titel"]) for j in online})
+        score, details = score_berechnen(cfg, stellen, alter, erneut, regional, pdl)
         neue = [j for j in online if (j["erstmals_gesehen"] or "") >= neu_grenze and not j["erstimport"]]
         if any(j["quelle"] == "Karriereseite" for j in neue):
             neu = "NEU (Karriereseite)"
@@ -87,7 +90,7 @@ def firmen_uebersicht(con, cfg: dict, flt: Filter | None = None, heute: date | N
         orte = sorted({j["ort"] for j in basis if j["ort"]})
         person = " ".join(x for x in [f.get("anrede"), f.get("person")] if x)
         zeilen.append({
-            "firma_key": key, "Firma": name, "Score": score, "Offene Stellen": len(online),
+            "firma_key": key, "Firma": name, "Score": score, "Offene Stellen": stellen,
             "Älteste Anzeige (Tage)": alter, "Erneut ausgeschrieben": erneut, "Regional": regional,
             "Neu": neu, "Fachbereiche": ", ".join(fbs), "Orte": ", ".join(orte),
             "Quellen": ", ".join(sorted({j["quelle"] for j in basis})),

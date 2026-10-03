@@ -1,0 +1,9 @@
+# Stellen-Radar – benötigte Python-Pakete (werden vom Installationsskript installiert)
+streamlit>=1.50,<2
+pandas>=2.1
+openpyxl>=3.1
+requests>=2.31
+PyYAML>=6.0
+beautifulsoup4>=4.12
+xhtml2pdf>=0.2.15
+qrcode[pil]>=7.4

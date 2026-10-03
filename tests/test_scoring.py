@@ -41,3 +41,25 @@ def test_uebersicht(tmp_path):
     assert list(df["Score"]) == sorted(df["Score"], reverse=True)
     # erster Abruf ist kein "Neu"
     assert (df["Neu"] == "").all()
+
+
+def test_excel_export(tmp_path):
+    import io
+
+    import openpyxl
+
+    from stellenradar.export import excel_bytes
+
+    cfg = lade_config()
+    cfg["arbeitsagentur"]["pause_sekunden"] = 0
+    con = verbinden(tmp_path / "t.db")
+    arbeitsagentur.abrufen(con, cfg, Filter(cfg), erzwingen=True,
+                           client=arbeitsagentur.BAClient(cfg, FakeSession(), schlafen=lambda s: None))
+    df = firmen_uebersicht(con, cfg)
+    wb = openpyxl.load_workbook(io.BytesIO(excel_bytes(df, con)))
+    assert wb.sheetnames == ["Firmen", "Anzeigen"]
+    kopf = [c.value for c in wb["Firmen"][1]]
+    assert "Firma" in kopf and "Score" in kopf and "LinkedIn" in kopf and "firma_key" not in kopf
+    assert wb["Firmen"].max_row == len(df) + 1
+    assert any(str(c.value).startswith("https://www.arbeitsagentur.de/jobsuche/jobdetail/")
+               for c in wb["Anzeigen"]["L"][1:])

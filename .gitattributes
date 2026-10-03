@@ -1,0 +1,4 @@
+# .bat-Dateien unverändert (mit CRLF) speichern – Windows braucht CRLF
+*.bat -text
+*.command text eol=lf
+*.py text eol=lf

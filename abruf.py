@@ -27,9 +27,10 @@ def logging_einrichten(cfg: dict) -> None:
     fh = logging.FileHandler(datei, encoding="utf-8")
     fh.setFormatter(fmt)
     log.addHandler(fh)
-    sh = logging.StreamHandler(sys.stdout)
-    sh.setFormatter(fmt)
-    log.addHandler(sh)
+    if sys.stdout is not None:          # bei pythonw (Aufgabenplanung) gibt es keine Konsole
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(fmt)
+        log.addHandler(sh)
 
 
 def main(argv=None) -> int:

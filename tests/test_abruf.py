@@ -106,3 +106,21 @@ def test_filter_hilfen(umgebung):
     assert firmen_schluessel("Muster GmbH & Co. KG") == firmen_schluessel("Muster GmbH")
     assert "SAP" in flt.fachbereiche_fuer_titel("SAP ABAP Entwickler (m/w/d)")
     assert flt.ist_regional("69469") and not flt.ist_regional("20457")
+
+
+def test_keine_verbindung_bricht_ab(umgebung):
+    import requests
+
+    cfg, con, flt = umgebung
+
+    class Kaputt:
+        headers = {}
+        n = 0
+
+        def get(self, *a, **k):
+            Kaputt.n += 1
+            raise requests.ConnectionError("keine Verbindung")
+
+    erg = lauf(cfg, con, flt, Kaputt())
+    assert not erg["erfolgreich"] and "nicht erreichbar" in erg["meldungen"][0]
+    assert Kaputt.n == cfg["arbeitsagentur"]["wiederholungen"]   # nur die erste Suche probiert

@@ -177,8 +177,11 @@ def abrufen(con, cfg: dict, flt: Filter | None = None, client: BAClient | None =
     gefiltert: set[str] = set()
     schritt = 0
 
+    abbruch = False
     for lauf, ort_params in laeufe:
         for fb, begriff in begriffe:
+            if abbruch:
+                break
             schritt += 1
             fundstelle = f"{lauf}|{begriff}"
             if fortschritt:
@@ -196,6 +199,8 @@ def abrufen(con, cfg: dict, flt: Filter | None = None, client: BAClient | None =
                     fehler += 1
                     meldungen.append(f"{fundstelle} Seite {seite}: {e}")
                     log.error("  Fehler: %s", e)
+                    if not client._endpunkt_bestaetigt:
+                        abbruch = True     # API von Anfang an nicht erreichbar -> Abruf beenden
                     break
                 items = daten.get("stellenangebote") or []
                 try:
@@ -229,6 +234,10 @@ def abrufen(con, cfg: dict, flt: Filter | None = None, client: BAClient | None =
                     break
                 seite += 1
 
+    if abbruch:
+        meldungen.insert(0, "Die Arbeitsagentur-API war nicht erreichbar – Abruf abgebrochen. "
+                            "Internetverbindung prüfen und später erneut versuchen.")
+        log.error(meldungen[0])
     offline = offline_markieren(con, start, gesehen, vollstaendig, seit)
     erneut = erneut_ausgeschrieben_pruefen(con, cfg)
     erfolgreich = len(vollstaendig) > 0 and fehler == 0
